@@ -1,6 +1,7 @@
 package org.vtko.prova.controller;
 
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -27,6 +28,7 @@ public class ReportController {
     @Autowired
     private GateRepository gateRepo;
 
+    @PreAuthorize("hasAnyAuthority('USER', 'ADMIN')")
     @GetMapping
     public List<Map<String, Object>> getTodayReport() {
         LocalDate today = LocalDate.now();
@@ -53,6 +55,7 @@ public class ReportController {
                 }).toList();
     }
 
+    @PreAuthorize("hasAnyAuthority('USER', 'ADMIN')")
     @GetMapping("/passengers")
     public List<Map<String, Object>> getPassengerListPerFlight() {
         return flightRepo.findAll().stream()
@@ -73,27 +76,35 @@ public class ReportController {
                 }).toList();
     }
 
+    @PreAuthorize("hasAnyAuthority('USER', 'ADMIN')")
     @GetMapping("/gates")
-    public List<Map<String, Object>> getFlightGateAssignments() {
-        return flightRepo.findAll().stream()
-                .map(flight -> {
+    public List<Map<String, Object>> getGateReport() {
+        var flights = flightRepo.findAll();
+        var flightsByGate = new HashMap<String, List<Map<String, Object>>>();
+
+        for (var flight : flights) {
+            if (flight.getGateId() != null) {
+                flightsByGate
+                        .computeIfAbsent(flight.getGateId(), k -> new java.util.ArrayList<>())
+                        .add(Map.of(
+                                "flightNumber", flight.getFlightNumber(),
+                                "status", flight.getStatus()
+                        ));
+            }
+        }
+
+        return gateRepo.findAll().stream()
+                .map(gate -> {
                     Map<String, Object> data = new HashMap<>();
-                    data.put("flightNumber", flight.getFlightNumber());
-                    data.put("flightId", flight.getId());
-                    data.put("status", flight.getStatus());
-
-                    String gateCode = flight.getGateId() != null
-                            ? gateRepo.findById(flight.getGateId())
-                            .map(Gate::getCode)
-                            .orElse("UNKNOWN")
-                            : "UNASSIGNED";
-
-                    data.put("gateCode", gateCode);
+                    data.put("gateCode", gate.getCode());
+                    data.put("available", gate.isAvailable());
+                    data.put("flights", flightsByGate.getOrDefault(gate.getId(), List.of()));
                     return data;
-                }).toList();
+                })
+                .toList();
     }
 
-
+    @PreAuthorize("hasAnyAuthority('USER', 'ADMIN')")
     @GetMapping("/checkin-status")
     public List<Map<String, Object>> getCheckInStatusReport() {
         return passengerRepo.findAll().stream()
